@@ -338,5 +338,5 @@ num_workers = 1
 # below is the same as before
 ...
 
-```
 
+## Run Sidekiq tasks for multiple Rails applications
