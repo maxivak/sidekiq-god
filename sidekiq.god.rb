@@ -1,7 +1,10 @@
 rails_env = 'production'
-rake_root = "/home/uadmin/.rvm/wrappers/ruby-2.1.7"
-bin_path   = "/home/uadmin/.rvm/gems/ruby-2.1.7/bin/"
 
+# for RVM
+rake_root = "/home/<MYUSER>/.rvm/wrappers/ruby-2.1.7"
+bin_path   = "/home/<MYUSER>/.rvm/gems/ruby-2.1.7/bin/"
+
+#
 app_root = "/var/www/apps/app3/current"
 
 name_prefix = "god-sidekiq-#{rails_env}"
@@ -21,25 +24,26 @@ God.watch do |w|
     w.env           = { 'RAILS_ENV' => rails_env, 'QUEUE' => '*' }
     w.dir           = app_root
 
-    w.pid_file = File.join(app_root, "tmp/pids/", "#{name}.pid")
-    w.log           = File.join(app_root, 'log', "#{name}.log")
+    w.pid_file = File.join(app_root, "tmp/pids/", "#{w.name}.pid")
+    w.log           = File.join(app_root, 'log', "#{w.name}.log")
 
 
     #
-    w.start = "bundle exec sidekiq -e #{rails_env} -c 1 -C #{app_root}/config/sidekiq.yml -L #{w.log}"
-    w.stop  = "if [ -d #{app_root} ] && [ -f #{w.pid_file} ] && kill -0 `cat #{w.pid_file}`> /dev/null 2>&1; then cd #{app_root} && #{bin_path}/bundle exec sidekiqctl stop #{w.pid_file} 10 ; else echo 'Sidekiq is not running'; fi"
+    w.start = "bundle exec sidekiq -e #{rails_env} -c 1 -C #{app_root}/config/sidekiq.yml -L #{w.log} -P #{w.pid_file}"
+    w.stop  = "kill -TERM `cat #{w.pid_file}`"
+    #w.stop  = "if [ -d #{app_root} ] && [ -f #{w.pid_file} ] && kill -0 `cat #{w.pid_file}`> /dev/null 2>&1; then cd #{app_root} && #{bin_path}/bundle exec sidekiqctl stop #{w.pid_file} 10 ; else echo 'Sidekiq is not running'; fi"
 
 
     #
     w.keepalive
     w.behavior(:clean_pid_file)
 
-    w.interval      = 90.seconds
+    w.interval      = 30.seconds
     w.start_grace = 10.seconds
-    w.restart_grace = 20.seconds
+    w.restart_grace = 10.seconds
 
-    w.stop_signal = 'QUIT'
-    w.stop_timeout = 20.seconds
+    #w.stop_signal = 'QUIT'
+    #w.stop_timeout = 20.seconds
 
 
 
