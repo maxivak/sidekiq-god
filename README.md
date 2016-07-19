@@ -1,0 +1,342 @@
+# God + Resque or Sidekiq
+This post shows how to use God with Resque or Sidekiq with multiple Rails applications. 
+
+It assumes that your already installed [Redis](https://github.com/redis/redis-rb) in your Rails applications.
+
+[God](http://godrb.com/) is an easy to configure, easy to extend monitoring framework written in Ruby.
+
+[Resque](https://github.com/resque/resque) is a Redis-backed library for creating background jobs, placing those jobs on multiple queues, and processing them later.
+
+[Sidekiq](https://github.com/mperham/sidekiq) is background processing for Ruby. Sidekiq is compatible with Resque.
+
+
+
+
+# God
+
+## install gem
+```ruby
+gem install god
+```
+
+## God startup script
+
+create wrapper for god:
+```ruby
+rvm wrapper ruby-2.1.5 boot god
+
+```
+
+create a startup script for god, so that god runs automatically after system boots.
+
+file '/etc/init.d/god'
+```ruby
+
+CONF_FILE=/opt/god/master.conf
+DAEMON=/home/myuser/.rvm/bin/boot_god # CHANGE it from - which boot_god
+PIDFILE=/var/run/god.pid
+LOGFILE=/var/log/god.log
+SCRIPTNAME=/etc/init.d/god
+
+#DEBUG_OPTIONS="--log-level debug"
+DEBUG_OPTIONS=""
+
+
+...
+
+```
+Find the whole file with the script in this gist.
+
+
+create an empty log file:
+```bash
+touch /var/log/god.log
+```
+
+set execute permissions for the script:
+```bash
+sudo chmod +x /etc/init.d/god
+```
+
+make the script run automically
+```bash
+sudo chkconfig god on
+or
+sudo update-rc.d god defaults
+```
+
+
+config file for god:
+/opt/god/master.conf:
+```ruby
+
+load "/opt/god/file_touched.rb"
+
+# app1
+load "/var/www/apps/app1/current/config/god/resque.god.rb"
+
+# app2
+load "/var/www/apps/app2/current/config/god/resque.god.rb"
+
+# app3 with sidekiq
+load "/var/www/apps/app2/current/config/god/sidekiq.god.rb"
+
+```
+
+This will watch resque tasks from multiple applications.
+
+create file used for restarting tasks - /opt/god/file_touched.rb. Find the file in this gist.
+
+
+## start god
+
+to start god:
+```bash
+sudo service god start
+```
+Start god service after you set up your applications.
+
+
+to restart god:
+```bash
+sudo service god restart
+```
+
+
+# Resque
+
+## setup Resque in Rails application
+
+Gemfile
+```ruby
+gem "resque"
+```
+
+### Redis namespace
+
+Use Resque.redis.namespace config value for Resque to set different namespaces for applications.
+
+initializer for Resque
+config/initializers/resque.rb
+```ruby
+Resque.redis.namespace = 'resque_app1' # and 'resque_app2' for app2
+
+```
+! IMPORTANT ! set different namespaces for your applications.
+
+
+### rake task for Resque
+
+create rake task
+lib/tasks/resque.rake
+```ruby
+require 'resque/tasks'
+
+task "resque:setup" => :environment do
+    ENV['QUEUE'] = "*"
+end
+
+
+```
+
+### run Resque workers
+
+you can run Resque to run all jobs:
+```bash
+rake resque:work
+```
+
+! IMPORTANT ! We don't need to run this command, because God will do this for us.
+
+
+# Resque config for God
+
+config/god/resque.god.rb
+
+```ruby
+rails_env = ENV['RAILS_ENV']
+app_root = ENV['RAILS_ROOT'] || "/var/www/apps/app1/current"
+rake_root = ENV['RAKE_ROOT'] || "/home/myuser/.rvm/wrappers/ruby-2.0.0-p598"
+name_prefix = "god-resque-app1-#{rails_env}"
+
+num_workers = 1
+
+num_workers.times do |num|
+  God.watch do |w|
+    w.uid = 'myuser'
+    w.gid = 'dev'
+
+    w.name          = "#{name}-#{num}"
+    w.group         = 'resque'
+    w.env           = { 'RAILS_ENV' => rails_env, 'QUEUE' => '*' }
+    w.dir           = app_root
+
+    w.pid_file = File.join(app_root, "tmp/pids", "#{w.name}.pid")
+    w.log           = File.join(app_root, 'log', "#{w.name}.log')
+
+    #
+    w.start         = "#{rake_root}/rake resque:work"
+
+    #
+    w.keepalive
+    w.behavior(:clean_pid_file)
+
+   
+
+  end
+end
+```
+Find the whole file below in this gist.
+
+
+
+Use different values for app2:
+```ruby
+rails_env = ENV['RAILS_ENV']
+app_root = ENV['RAILS_ROOT'] || "/var/www/apps/app2/current"
+rake_root = ENV['RAKE_ROOT'] || "/home/myuser/.rvm/wrappers/ruby-2.0.0-p598"
+name_prefix = "god-resque-app2-#{rails_env}"
+
+num_workers = 1
+
+# below is the same as for app1
+...
+
+```
+
+# Sidekiq
+
+install sidekiq:
+
+Gemfile:
+```
+gem 'sidekiq'
+```
+
+
+config/sidekiq.yml
+
+```
+---
+:concurrency: 1
+:queues:
+  - default
+  - mailers
+  
+```
+
+
+### Redis namespace
+
+
+Use different Redis namespaces for different applictions
+
+
+initializer for Resque
+config/initializers/sidekiq.rb
+```ruby
+Sidekiq.configure_server do |config|
+  config.redis = { url: 'redis://localhost:6379/0', namespace: "app3_sidekiq_#{Rails.env}" }
+end
+
+Sidekiq.configure_client do |config|
+  config.redis = { url: 'redis://localhost:6379/0', namespace: "app3_sidekiq_#{Rails.env}" }
+end
+
+
+```
+! IMPORTANT ! set different namespaces for your applications.
+
+
+
+### run Sidekiq workers
+
+You can start Sidekiq to run all jobs:
+```bash
+# run from the app root folder
+
+# default
+bundle exec sidekiq
+
+# with options
+bundle exec sidekiq -e production -c 1 -C config/sidekiq.yml -L /var/www/apps/app3/current/log/sidekiq.log
+
+```
+
+! IMPORTANT ! We don't need to run this command, because God will do this for us.
+
+
+# Sidekiq config for God
+
+
+config/god/sidekiq.god.rb
+
+```ruby
+rails_env = 'production'
+rake_root = "/home/uadmin/.rvm/wrappers/ruby-2.1.7"
+bin_path   = "/home/uadmin/.rvm/gems/ruby-2.1.7/bin/"
+
+app_root = "/var/www/apps/app3/current"
+app_shared   = "/var/www/apps/app3/shared"
+
+
+name_prefix = "god-sidekiq-#{rails_env}"
+
+
+num_workers = 1
+
+num_workers.times do |num|
+  God.watch do |w|
+    w.uid = 'myuser'
+    w.gid = 'myuser'
+
+    
+    w.name = "#{name_prefix}-#{num}"
+    w.group         = 'sidekiq'
+    w.env           = { 'RAILS_ENV' => rails_env, 'QUEUE' => '*' }
+    w.dir           = rails_root
+
+    w.pid_file = File.join(app_root, "tmp/pids/", "#{name}.pid")
+    w.log           = File.join(app_root, 'log', "#{name}.log")
+
+  
+    #
+    w.start = "bundle exec sidekiq -e #{rails_env} -c 1 -C #{app_root}/config/sidekiq.yml -L #{w.log}"
+    
+    w.stop  = "if [ -d #{app_root} ] && [ -f #{w.pid_file} ] && kill -0 `cat #{w.pid_file}`> /dev/null 2>&1; then cd #{app_root} && #{bin_path}/bundle exec sidekiqctl stop #{w.pid_file} 10 ; else echo 'Sidekiq is not running'; fi"
+
+
+  
+    #
+    w.keepalive
+    w.behavior(:clean_pid_file)
+
+    ...
+    
+
+  end
+end
+```
+
+Find the whole file in this gist below.
+
+
+
+Use different values for each application:
+```ruby
+rails_env = 'production'
+rake_root = "/home/uadmin/.rvm/wrappers/ruby-2.1.7"
+bin_path   = "/home/uadmin/.rvm/gems/ruby-2.1.7/bin/"
+
+app_root = "/var/www/apps/app4/current"
+name_prefix = "god-sidekiq-#{rails_env}"
+
+
+
+num_workers = 1
+
+# below is the same as before
+...
+
+```
+
