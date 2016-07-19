@@ -29,7 +29,7 @@ God.watch do |w|
 
 
     #
-    w.start = "bundle exec sidekiq -e #{rails_env} -c 1 -C #{app_root}/config/sidekiq.yml -L #{w.log} -P #{w.pid_file}"
+    w.start = "bundle exec sidekiq -d -e #{rails_env} -c 1 -C #{app_root}/config/sidekiq.yml -L #{w.log} -P #{w.pid_file}"
     w.stop  = "kill -TERM `cat #{w.pid_file}`"
     #w.stop  = "if [ -d #{app_root} ] && [ -f #{w.pid_file} ] && kill -0 `cat #{w.pid_file}`> /dev/null 2>&1; then cd #{app_root} && #{bin_path}/bundle exec sidekiqctl stop #{w.pid_file} 10 ; else echo 'Sidekiq is not running'; fi"
 
