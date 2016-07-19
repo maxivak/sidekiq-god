@@ -103,6 +103,16 @@ sudo service god restart
 ```
 
 
+# Watching processes with God
+
+watching daemonized processes:
+* If the process you're watching runs as a daemon, you'll need to set the pid_file attribute.
+
+watching non-daemonized processes:
+* a script that doesn't have built in daemonization. God will daemonize and keep track of your process.
+* If you don't specify a pid_file attribute for a watch, it will be auto-daemonized and a PID file will be stored for it in /var/run/god.
+
+
 # Resque
 
 ## setup Resque in Rails application
