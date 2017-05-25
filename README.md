@@ -353,7 +353,11 @@ num_workers = 1
 
 ### Stop timeout period for Sidekiq
 
-TERM signals that Sidekiq should shut down within the -t timeout option. Any workers that do not finish within the timeout are forcefully terminated and their messages are lost. The timeout defaults to 8 seconds.
+We want to tell Sidekiq to wait till our running jobs finished.
+
+
+TERM signals that Sidekiq should shut down within the -t timeout option.
+Any workers that do not finish within the timeout are forcefully terminated and their messages are lost. The timeout defaults to 8 seconds.
 
 
 * Specify timeout in Sidekiq config sidekiq.yml
