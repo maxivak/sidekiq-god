@@ -335,6 +335,7 @@ Find the whole file in this gist below.
 
 
 Use different values for each application:
+
 ```ruby
 rails_env = 'production'
 rake_root = "/home/uadmin/.rvm/wrappers/ruby-2.1.7"
@@ -349,6 +350,7 @@ num_workers = 1
 
 # below is the same as before
 ...
+```
 
 
 ### Stop timeout period for Sidekiq
