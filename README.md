@@ -351,4 +351,24 @@ num_workers = 1
 ...
 
 
+### Stop timeout period for Sidekiq
+
+TERM signals that Sidekiq should shut down within the -t timeout option. Any workers that do not finish within the timeout are forcefully terminated and their messages are lost. The timeout defaults to 8 seconds.
+
+Stop Sidekiq using sidekiqctl runtime utility.
+
+```
+    # run sidekiq in foreground
+    w.start = "bundle exec sidekiq -d -e #{rails_env} -c 1 -C #{app_root}/config/sidekiq.yml -L #{w.log}"
+    
+    # stop timeout - 30 seconds
+    w.stop  = "sidekiqctl stop #{w.pid_file} 30 "
+
+
+```
+
+
+Read more about Signals and Sidekiq - https://github.com/mperham/sidekiq/wiki/Signals
+
+
 ## Run Sidekiq tasks for multiple Rails applications
