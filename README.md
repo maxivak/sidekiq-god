@@ -283,8 +283,10 @@ config/god/sidekiq.god.rb
 
 ```ruby
 rails_env = 'production'
-rake_root = "/home/uadmin/.rvm/wrappers/ruby-2.1.7"
-bin_path   = "/home/uadmin/.rvm/gems/ruby-2.1.7/bin/"
+
+rake_root = "/home/myuser/.rvm/wrappers/ruby-2.1.7"
+bin_path   = "/home/myuser/.rvm/gems/ruby-2.3.3/bin"
+
 
 app_root = "/var/www/apps/app3/current"
 app_shared   = "/var/www/apps/app3/shared"
@@ -292,7 +294,10 @@ app_shared   = "/var/www/apps/app3/shared"
 
 name_prefix = "god-sidekiq-#{rails_env}"
 
+stop_timeout = 60
+concurrency = 10
 
+#
 num_workers = 1
 
 num_workers.times do |num|
@@ -312,9 +317,13 @@ num_workers.times do |num|
 
   
     # run sidekiq as daemon
-    w.start = "bundle exec sidekiq -d -e #{rails_env} -c 1 -C #{app_root}/config/sidekiq.yml -L #{w.log}"
-    w.stop  = "kill -TERM `cat #{w.pid_file}`"
+    sidekiq_options = "-e #{rails_env} -t #{stop_timeout}  -c #{concurrency} -C #{app_root}/config/sidekiq.yml -L #{w.log} -P #{w.pid_file}"
     
+    w.start = "cd #{app_root}; nohup #{bin_path}/bundle exec sidekiq -d  #{sidekiq_options} 2>&1 &"
+    w.stop  = "cd #{app_root} && sidekiqctl stop #{w.pid_file} #{stop_timeout} "
+
+    
+    #w.stop  = "kill -TERM `cat #{w.pid_file}`"
     #w.stop  = "if [ -d #{app_root} ] && [ -f #{w.pid_file} ] && kill -0 `cat #{w.pid_file}`> /dev/null 2>&1; then cd #{app_root} && #{bin_path}/bundle exec sidekiqctl stop #{w.pid_file} 10 ; else echo 'Sidekiq is not running'; fi"
 
 
@@ -323,8 +332,8 @@ num_workers.times do |num|
     w.keepalive
     w.behavior(:clean_pid_file)
 
-    ...
-    
+...
+
 
   end
 end
@@ -338,8 +347,8 @@ Use different values for each application:
 
 ```ruby
 rails_env = 'production'
-rake_root = "/home/uadmin/.rvm/wrappers/ruby-2.1.7"
-bin_path   = "/home/uadmin/.rvm/gems/ruby-2.1.7/bin/"
+rake_root = "/home/myuser/.rvm/wrappers/ruby-2.3.3"
+bin_path   = "/home/myuser/.rvm/gems/ruby-2.3.3/bin/"
 
 app_root = "/var/www/apps/app4/current"
 name_prefix = "god-sidekiq-#{rails_env}"
@@ -355,10 +364,12 @@ num_workers = 1
 
 ### Stop timeout period for Sidekiq
 
-We want to tell Sidekiq to wait till our running jobs finished.
+Eventually we need to restart Sidekiq, for example, after deploy.
+If you have long running jobs and Sidekiq is restarting then you might lose your jobs and jobs wouldn't finish.
+When Sidekiq is stopping we want to tell Sidekiq to wait until our running jobs finish.
 
-
-TERM signals that Sidekiq should shut down within the -t timeout option.
+When Sidekiq restarts it receives TERM signals.
+Sidekiq should shut down within the -t timeout option.
 Any workers that do not finish within the timeout are forcefully terminated and their messages are lost. The timeout defaults to 8 seconds.
 
 
@@ -375,17 +386,40 @@ Any workers that do not finish within the timeout are forcefully terminated and 
 ```
 
 
-Stop Sidekiq using sidekiqctl runtime utility.
+Stop Sidekiq using sidekiqctl runtime utility and use stop timeout = 60 seconds.
 
 * config for god
 
 ```
-    # run sidekiq in foreground
-    w.start = "bundle exec sidekiq -d -e #{rails_env} -c 1 -C #{app_root}/config/sidekiq.yml -L #{w.log}"
+
+stop_timeout = 60
+
+
+God.watch do |w|
+ ...
+    # run sidekiq as daemon
+    sidekiq_options = "-e #{rails_env} -t #{stop_timeout}  -c #{concurrency} -C #{app_root}/config/sidekiq.yml -L #{w.log} -P #{w.pid_file}"
+    
+    w.start = "cd #{app_root}; nohup #{bin_path}/bundle exec sidekiq -d  #{sidekiq_options} 2>&1 &"
+    w.stop  = "cd #{app_root} && sidekiqctl stop #{w.pid_file} #{stop_timeout} "
+
+
     
     # stop timeout - 30 seconds
-    w.stop  = "sidekiqctl stop #{w.pid_file} 30 "
+    w.stop  = "sidekiqctl stop #{w.pid_file} #{stop_timeout} "
 
+    ...
+    
+    #
+    w.interval      = 30.seconds
+
+    w.start_grace = 20.seconds
+    w.restart_grace = 20.seconds
+
+    #w.stop_signal = 'QUIT'
+    w.stop_timeout = stop_timeout.seconds
+    
+    
 
 ```
 
