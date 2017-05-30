@@ -23,7 +23,7 @@ gem install god
 
 create wrapper for god:
 ```ruby
-rvm wrapper ruby-2.1.5 boot god
+rvm wrapper ruby-2.3.3 boot god
 
 ```
 
