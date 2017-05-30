@@ -1,16 +1,20 @@
 rails_env = 'production'
 
 # for RVM
-rake_root = "/home/<MYUSER>/.rvm/wrappers/ruby-2.1.7"
-bin_path   = "/home/<MYUSER>/.rvm/gems/ruby-2.1.7/bin/"
+rake_root = "/home/<MYUSER>/.rvm/wrappers/ruby-2.3.3"
+bin_path   = "/home/<MYUSER>/.rvm/gems/ruby-2.3.3/bin/"
 
 #
 app_root = "/var/www/apps/app3/current"
 
 name_prefix = "god-sidekiq-#{rails_env}"
 
+# settings
+stop_timeout = 1800
+concurrency = 10 
 
 num_workers = 1
+
 
 num_workers.times do |num|
   
@@ -29,66 +33,89 @@ God.watch do |w|
 
 
     #
-    w.start = "bundle exec sidekiq -d -e #{rails_env} -c 1 -C #{app_root}/config/sidekiq.yml -L #{w.log} -P #{w.pid_file}"
-    w.stop  = "kill -TERM `cat #{w.pid_file}`"
-    #w.stop  = "if [ -d #{app_root} ] && [ -f #{w.pid_file} ] && kill -0 `cat #{w.pid_file}`> /dev/null 2>&1; then cd #{app_root} && #{bin_path}/bundle exec sidekiqctl stop #{w.pid_file} 10 ; else echo 'Sidekiq is not running'; fi"
+    sidekiq_options = "-e #{rails_env} -t #{stop_timeout}  -c #{concurrency} -C #{app_root}/config/sidekiq.yml -L #{w.log} -P #{w.pid_file}"
+    w.start = "cd #{app_root}; nohup #{bin_path}/bundle exec sidekiq -d  #{sidekiq_options} 2>&1 &"
+    w.stop  = "cd #{app_root} && sidekiqctl stop #{w.pid_file} #{stop_timeout} "
+   
+  #w.stop  = "kill -TERM `cat #{w.pid_file}`"
+  #w.stop  = "if [ -d #{app_root} ] && [ -f #{w.pid_file} ] && kill -0 `cat #{w.pid_file}`> /dev/null 2>&1; then cd #{app_root} && #{bin_path}/bundle exec sidekiqctl stop #{w.pid_file} 10 ; else echo 'Sidekiq is not running'; fi"
 
 
     #
     w.keepalive
     w.behavior(:clean_pid_file)
-
+  
+    #
     w.interval      = 30.seconds
-    w.start_grace = 10.seconds
-    w.restart_grace = 10.seconds
+
+    w.start_grace = 20.seconds
+    w.restart_grace = 20.seconds
 
     #w.stop_signal = 'QUIT'
-    #w.stop_timeout = 20.seconds
+    w.stop_timeout = stop_timeout.seconds
 
 
 
-    #
-    w.start_if do |start|
-      start.condition(:process_running) do |c|
-        c.interval = 5.seconds
-        c.running = false
-      end
-    end
 
-    w.restart_if do |restart|
-      restart.condition(:memory_usage) do |c|
-        c.above = 300.megabytes
-        c.times = [3, 5] # 3 out of 5 intervals
+# from godrb.com
+      # determine the state on startup
+      w.transition(:init, { true => :up, false => :start }) do |on|
+        on.condition(:process_running) do |c|
+          c.running = true
+        end
       end
 
-      restart.condition(:cpu_usage) do |c|
-        c.above = 50.percent
-        c.times = 5
+      # determine when process has finished starting
+      w.transition([:start, :restart], :up) do |on|
+        on.condition(:process_running) do |c|
+          c.running = true
+          c.interval = 5.seconds
+        end
+
+        # failsafe
+        on.condition(:tries) do |c|
+          c.times = 5
+          c.transition = :start
+          c.interval = 5.seconds
+        end
       end
-    end
 
-    w.lifecycle do |on|
-      on.condition(:flapping) do |c|
-        c.to_state = [:start, :restart]
-        c.times = 5
-        c.within = 5.minute
-        c.transition = :unmonitored
-        c.retry_in = 10.minutes
-        c.retry_times = 5
-        c.retry_within = 2.hours
+      # start if process is not running
+      w.transition(:up, :start) do |on|
+        on.condition(:process_running) do |c|
+          c.running = false
+        end
       end
-    end
 
 
 
-    # after touch tmp/restart.txt
-    w.transition(:up, :restart) do |on|
-      # restart if server is restarted
-      on.condition(:file_touched) do |c|
-        c.interval = 5.seconds
-        c.path = File.join(rails_root, 'tmp', 'restart.txt')
+
+=begin
+      w.lifecycle do |on|
+        on.condition(:flapping) do |c|
+          c.to_state = [:start, :restart]
+          c.times = 5
+          c.within = 5.minute
+          c.transition = :unmonitored
+          c.retry_in = 10.minutes
+          c.retry_times = 5
+          c.retry_within = 2.hours
+        end
       end
-    end
+=end
+  
+  
+
+  ### restart  after touch tmp/restart.txt
+      w.restart_if do |on|
+        on.condition(:file_touched) do |c|
+          c.interval = 5.seconds
+          c.path = File.join(app_root, 'tmp', 'restart.txt')
+        end
+
+      end
+  
+  
 
   end
 end
